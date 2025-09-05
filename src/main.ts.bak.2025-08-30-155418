@@ -1,0 +1,87 @@
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+// ❗️ نکته مهم: این را به‌صورت namespace import بیاور، نه default
+import * as basicAuth from 'express-basic-auth';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
+
+  // Prefix
+  app.setGlobalPrefix('api');
+
+  // Security & body parsing
+  app.use(helmet());
+  app.use(cookieParser());
+
+  // CORS
+  app.enableCors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  // Validation
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidUnknownValues: false,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
+  // اگر لازم است trust proxy فعال شود (برای X-Forwarded-* پشت Nginx)
+  const trustProxy = Number(config.get<string>('TRUST_PROXY') ?? '0');
+  if (trustProxy > 0) {
+    const expressApp = app.getHttpAdapter().getInstance();
+    expressApp.set('trust proxy', trustProxy);
+  }
+
+  // Swagger (+ Basic Auth اختیاری)
+  const swaggerEnabled =
+    (config.get<string>('SWAGGER_ENABLED') ?? '').toLowerCase() === 'true';
+
+  if (swaggerEnabled) {
+    const swaggerUser =
+      config.get<string>('SWAGGER_USER') ??
+      config.get<string>('SWAGGER_BASIC_USER');
+    const swaggerPass =
+      config.get<string>('SWAGGER_PASS') ??
+      config.get<string>('SWAGGER_BASIC_PASS');
+
+    // اگر یوزر/پسورد ست شده، روی مسیر داکس BasicAuth بگذار
+    if (swaggerUser && swaggerPass) {
+      const expressApp = app.getHttpAdapter().getInstance();
+      expressApp.use(
+        ['/api/docs', '/api/docs-json'],
+        basicAuth({
+          users: { [swaggerUser]: swaggerPass },
+          challenge: true,
+        }),
+      );
+    }
+
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Celex API')
+      .setDescription('API documentation for Celex')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
+
+  const port = Number(config.get<string>('PORT') ?? 5000);
+  await app.listen(port);
+}
+
+bootstrap();
+
