@@ -1,4 +1,4 @@
-name: Deploy FRONT
+name: Deploy API
 
 on:
   push:
