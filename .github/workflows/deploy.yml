@@ -1,25 +1,53 @@
 name: Deploy API
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch: {}
 
 concurrency:
-  group: celex-api-${{ github.ref }}
+  group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
+      - name: Verify server host key (ED25519) and write known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST="${{ vars.DEPLOY_HOST }}"
+          PORT="${{ vars.DEPLOY_PORT || '22' }}"
+          FP_EXPECT="${{ vars.DEPLOY_HOST_FINGERPRINT }}"
+
+          if [[ -z "${HOST}" || -z "${FP_EXPECT}" ]]; then
+            echo "DEPLOY_HOST or DEPLOY_HOST_FINGERPRINT is empty."
+            exit 1
+          fi
+
+          # گرفتن کلید میزبان و محاسبه فینگرپرینت واقعی
+          FP_ACTUAL="$(ssh-keyscan -p "${PORT}" -t ed25519 "${HOST}" 2>/dev/null \
+            | ssh-keygen -lf - | awk '{print $2}')"
+
+          echo "Expected: ${FP_EXPECT}"
+          echo "Actual:   ${FP_ACTUAL}"
+
+          [[ "${FP_ACTUAL}" == "${FP_EXPECT}" ]] || {
+            echo "❌ Host key fingerprint mismatch!"; exit 1;
+          }
+
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${PORT}" "${HOST}" >> ~/.ssh/known_hosts
+
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ vars.DEPLOY_HOST || '75.119.135.119' }}
+          host: ${{ vars.DEPLOY_HOST }}
           username: ${{ vars.DEPLOY_USER || 'deploy' }}
           port: ${{ vars.DEPLOY_PORT || '22' }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          host_fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
           script_stop: true
           command_timeout: 30m
           script: |
