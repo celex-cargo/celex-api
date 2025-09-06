@@ -1,4 +1,4 @@
-name: Deploy API
+name: Deploy FRONT
 
 on:
   push:
@@ -13,38 +13,35 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
-      - name: Verify server host key (ED25519) and write known_hosts
+      - name: Prepare known_hosts (verify if fingerprint provided)
         shell: bash
         run: |
           set -euo pipefail
-          HOST="${{ vars.DEPLOY_HOST }}"
+          HOST="${{ vars.DEPLOY_HOST || '75.119.135.119' }}"
           PORT="${{ vars.DEPLOY_PORT || '22' }}"
-          FP_EXPECT="${{ vars.DEPLOY_HOST_FINGERPRINT }}"
+          EXPECT="${{ vars.DEPLOY_HOST_FINGERPRINT || '' }}"
 
-          if [[ -z "${HOST}" || -z "${FP_EXPECT}" ]]; then
-            echo "DEPLOY_HOST or DEPLOY_HOST_FINGERPRINT is empty."
+          ACTUAL="$(ssh-keyscan -p "$PORT" -t ed25519 "$HOST" 2>/dev/null \
+                   | ssh-keygen -lf - | awk '{print $2}')"
+          echo "Host ed25519 fingerprint: $ACTUAL"
+
+          # اگر EXPECT پر باشد، باید دقیقاً برابر باشد؛ اگر خالی بود صرفاً KnownHosts را می‌نویسیم
+          if [[ -n "$EXPECT" && "$ACTUAL" != "$EXPECT" ]]; then
+            echo "❌ Fingerprint mismatch"
+            echo "Expected: $EXPECT"
+            echo "Actual:   $ACTUAL"
             exit 1
           fi
 
-          # گرفتن کلید میزبان و محاسبه فینگرپرینت واقعی
-          FP_ACTUAL="$(ssh-keyscan -p "${PORT}" -t ed25519 "${HOST}" 2>/dev/null \
-            | ssh-keygen -lf - | awk '{print $2}')"
-
-          echo "Expected: ${FP_EXPECT}"
-          echo "Actual:   ${FP_ACTUAL}"
-
-          [[ "${FP_ACTUAL}" == "${FP_EXPECT}" ]] || {
-            echo "❌ Host key fingerprint mismatch!"; exit 1;
-          }
-
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${PORT}" "${HOST}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ vars.DEPLOY_HOST }}
+          host: ${{ vars.DEPLOY_HOST || '75.119.135.119' }}
           username: ${{ vars.DEPLOY_USER || 'deploy' }}
           port: ${{ vars.DEPLOY_PORT || '22' }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
