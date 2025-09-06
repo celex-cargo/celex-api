@@ -19,6 +19,7 @@ jobs:
           username: ${{ vars.DEPLOY_USER || 'deploy' }}
           port: ${{ vars.DEPLOY_PORT || '22' }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          host_fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}   # ← اختیاری/امنیتی
           script_stop: true
           command_timeout: 30m
           script: |
