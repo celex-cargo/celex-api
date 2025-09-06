@@ -1,18 +1,25 @@
-name: Deploy CELEX
+name: Deploy API
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   workflow_dispatch: {}
+
+concurrency:
+  group: celex-api-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and run deploy
+      - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 75.119.135.119
-          username: deploy
+          host: ${{ vars.DEPLOY_HOST || '75.119.135.119' }}
+          username: ${{ vars.DEPLOY_USER || 'deploy' }}
+          port: ${{ vars.DEPLOY_PORT || '22' }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script_stop: true
+          command_timeout: 30m
           script: |
-            /usr/local/bin/deploy-celex-all
+            /usr/local/bin/deploy-celex-api
